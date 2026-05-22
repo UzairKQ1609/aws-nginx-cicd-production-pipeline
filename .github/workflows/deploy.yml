@@ -1,0 +1,37 @@
+name: Deploy Website to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          # Write the private key to a temporary file
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_deploy_key
+          chmod 600 ~/.ssh/id_deploy_key
+          # Cache host keys to bypass strict interactive confirmation prompts
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Website
+        run: |
+          # 1. Sync local folder files to the remote staging area using the explicit identity key
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_deploy_key" \
+            --exclude '.git*' \
+            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}/tmp/website/
+
+          # 2. Update the public Nginx web server host directory directly
+          ssh -i ~/.ssh/id_deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
+            sudo rm -rf /var/www/html/*
+            sudo cp -r /tmp/website/* /var/www/html/
+          "
