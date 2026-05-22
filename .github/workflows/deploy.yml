@@ -13,7 +13,23 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup SSH
+      - name: Validate Pipeline Secrets
+        run: |
+          if [ -z "${{ secrets.EC2_HOST }}" ]; then
+            echo "❌ ERROR: EC2_HOST secret is empty! Please add it to Repository Secrets."
+            exit 1
+          fi
+          if [ -z "${{ secrets.EC2_USER }}" ]; then
+            echo "❌ ERROR: EC2_USER secret is empty! Please add it to Repository Secrets."
+            exit 1
+          fi
+          if [ -z "${{ secrets.EC2_SSH_KEY }}" ]; then
+            echo "❌ ERROR: EC2_SSH_KEY secret is empty! Please add it to Repository Secrets."
+            exit 1
+          fi
+          echo "✅ All required repository secrets are loaded properly."
+
+      - name: Setup SSH Environment
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_deploy_key
@@ -22,13 +38,13 @@ jobs:
 
       - name: Deploy Website
         run: |
-          # Create the staging directory on the remote instance first to avoid file-mapping issues
+          # 1. Prepare remote folder
           ssh -i ~/.ssh/id_deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p /tmp/website/"
 
-          # Sync application assets (Keep this entirely on one line)
+          # 2. Sync application assets over the wire
           rsync -avz --delete -e "ssh -i ~/.ssh/id_deploy_key" --exclude '.git*' ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/website/
 
-          # Swap out old web assets with the freshly staged files
+          # 3. Swap live Nginx web deployment files
           ssh -i ~/.ssh/id_deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
             sudo rm -rf /var/www/html/*
             sudo cp -r /tmp/website/* /var/www/html/
